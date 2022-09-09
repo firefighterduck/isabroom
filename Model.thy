@@ -65,10 +65,20 @@ proof -
 qed
 setup_lifting type_definition_stack
 
+abbreviation update_stack :: "stack \<Rightarrow> var \<Rightarrow> val \<Rightarrow> stack" where
+  "update_stack s x v \<equiv> Stack ((lookup s)(x:=v))"
+
 lemma fits_upd: "fits k x \<Longrightarrow> (lookup s)(x:=k) \<in> {s. \<forall>v. fits (s v) v}"
   using lookup by (auto simp: fits_def)
 
+definition bind_args_to_params :: "(var \<Rightarrow> val) \<Rightarrow> var list \<Rightarrow> var list \<Rightarrow> var \<Rightarrow> val" where
+  "bind_args_to_params s params args x \<equiv> 
+    case map_of (zip params args) x of Some a \<Rightarrow> s a | None \<Rightarrow> s x"
+
 type_synonym memory = "loc \<rightharpoonup> byte"
+
+fun intv :: "loc \<Rightarrow> (loc\<times>loc) \<Rightarrow> bool" where
+  "intv x (l,u) = (l\<le>x \<and> x<u)"
 
 fun raw_access_rev :: "memory \<Rightarrow> loc \<Rightarrow> nat \<Rightarrow> byte option list" where
   "raw_access_rev m b 0 = [m b]"
@@ -110,6 +120,9 @@ fun update_memory :: "memory \<Rightarrow> loc \<Rightarrow> val \<Rightarrow> m
   "update_memory m _ [] = m"
 | "update_memory m l (v#vs) = update_memory (m(l\<mapsto>v)) (offset l 1) vs"
 
+definition free_memory :: "memory \<Rightarrow> loc \<Rightarrow> loc \<Rightarrow> memory" where
+  "free_memory m l u \<equiv> \<lambda>x. if intv x (l,u) then None else m x"
+
 type_synonym blockname = nat
 type_synonym block = "(blockname\<times>(loc\<times>loc))"
 
@@ -126,9 +139,6 @@ proof -
 qed
 setup_lifting type_definition_blocks
 
-fun intv :: "loc \<Rightarrow> (loc\<times>loc) \<Rightarrow> bool" where
-  "intv x (l,u) = (l\<le>x \<and> x<u)"
-
 definition overlaps_with :: "block \<Rightarrow> block \<Rightarrow> bool" where
   "overlaps_with b1 b2 \<equiv> (case b1 of (_,l1,u1) \<Rightarrow> case b2 of (_,l2,u2) \<Rightarrow>
     \<exists>x. intv x (l1,u1) \<and> intv x (l2,u2))"
@@ -136,6 +146,15 @@ definition overlaps_with :: "block \<Rightarrow> block \<Rightarrow> bool" where
 lemma overlaps_alt: "overlaps_with (n1,l1,u1) (n2,l2,u2) \<longleftrightarrow> l1<u1 \<and> l2<u2 \<and> 
   ((l1<u2\<and>l2\<le>l1) \<or> (l2<u1\<and>l1\<le>l2))"
   by (auto simp: overlaps_with_def)
+
+definition free_block_from :: "block list \<Rightarrow> loc \<Rightarrow> block list" where
+  "free_block_from B x = filter (\<lambda>(_,l,_). l\<noteq>x) B"
+
+lemma free_block_from_set: "set (free_block_from B x) = {(n,l,u) | n l u. (n,l,u) \<in> set B \<and> l \<noteq> x}"
+  unfolding free_block_from_def by auto
+
+lift_definition free_block :: "blocks \<Rightarrow> loc \<Rightarrow> blocks" is free_block_from 
+  using free_block_from_set apply auto apply fast by meson+
 
 type_synonym pre_config = "stack \<times> blocks \<times> memory"
 
@@ -147,19 +166,21 @@ lift_definition get_stack :: "config \<Rightarrow> stack" is "\<lambda>c. (case 
 lift_definition get_blocks :: "config \<Rightarrow> blocks" is "\<lambda>c. (case c of (_,b::blocks,_) \<Rightarrow> b)" .
 lift_definition get_memory :: "config \<Rightarrow> memory" is "\<lambda>c. (case c of (_,_,m::memory) \<Rightarrow> m)" .
 
-fun from_block :: "loc \<Rightarrow> block list \<Rightarrow> block option" where
-  "from_block l [] = None"
-| "from_block l ((n,lu)#bs) = (if intv l lu then Some (n,lu) else from_block l bs)"
+definition from_block_raw :: "loc \<Rightarrow> block list \<Rightarrow> block option" where
+  "from_block_raw l bs \<equiv> find (\<lambda>(_,lu). intv l lu) bs"
 
-lemma from_block_intv: "from_block x B = Some (n,l,u) \<Longrightarrow> intv x (l,u)"
+lift_definition from_block :: "loc \<Rightarrow> blocks \<Rightarrow> block option" is "from_block_raw" .
+
+lemma from_block_raw_intv: "from_block_raw x B = Some (n,l,u) \<Longrightarrow> intv x (l,u)"
+  unfolding from_block_raw_def
   apply (induction B) apply (auto split: option.splits)
    by (metis Pair_inject option.inject)+
 
-lemma intv_from_block: "\<exists>n l u. intv x (l,u) \<and> (n,l,u) \<in> set B \<Longrightarrow> from_block x B \<noteq> None"
-  apply (induction B) by auto blast+
+lemma intv_from_block_raw: "\<exists>n l u. intv x (l,u) \<and> (n,l,u) \<in> set B \<Longrightarrow> from_block_raw x B \<noteq> None"
+  unfolding from_block_raw_def apply (induction B) by auto
 
-lemma from_block_set: "from_block x B = Some (n,l,u) \<Longrightarrow> (n,l,u) \<in> set B"
-  apply (induction B) by auto (metis Pair_inject option.inject)+
+lemma from_block_raw_set: "from_block_raw x B = Some (n,l,u) \<Longrightarrow> (n,l,u) \<in> set B"
+  unfolding from_block_raw_def apply (induction B) by auto (metis Pair_inject option.inject)+
 
 lemma blocks_non_overlapping:
   "\<lbrakk>(n1,l1,u1)\<in>set (raw_blocks B); (n2,l2,u2)\<in>set (raw_blocks B); intv z (l1,u1); intv z (l2,u2)\<rbrakk>
@@ -176,19 +197,19 @@ proof -
   then show ?thesis by auto
 qed
 
-lemma offset_in_block: "\<lbrakk>from_block x (raw_blocks B) = Some (n,l,u); offset x y<u; x\<le>offset x y\<rbrakk>
-  \<Longrightarrow> from_block (offset x y) (raw_blocks B) = Some (n,l,u)"
+lemma offset_in_block: "\<lbrakk>from_block_raw x (raw_blocks B) = Some (n,l,u); offset x y<u; x\<le>offset x y\<rbrakk>
+  \<Longrightarrow> from_block_raw (offset x y) (raw_blocks B) = Some (n,l,u)"
 proof (induction y arbitrary: x)
   case 0
   then show ?case by simp
 next
   case (Suc y)
-  with from_block_intv[OF Suc(2)] have "l \<le> offset x (Suc y)" by auto
+  with from_block_raw_intv[OF Suc(2)] have "l \<le> offset x (Suc y)" by auto
   with Suc(3) have intv_offset: "intv (offset x (Suc y)) (l,u)" by simp
-  then have "from_block (offset x (Suc y)) (raw_blocks B) \<noteq> None"
-    using intv_from_block from_block_set[OF Suc(2)] by blast
-  then obtain n' l' u' where "from_block (offset x (Suc y)) (raw_blocks B) = Some (n',l',u')" by auto
-  with blocks_non_overlapping[OF from_block_set[OF Suc(2)] from_block_set[OF this] intv_offset from_block_intv[OF this]]
+  then have "from_block_raw (offset x (Suc y)) (raw_blocks B) \<noteq> None"
+    using intv_from_block_raw from_block_raw_set[OF Suc(2)] by blast
+  then obtain n' l' u' where "from_block_raw (offset x (Suc y)) (raw_blocks B) = Some (n',l',u')" by auto
+  with blocks_non_overlapping[OF from_block_raw_set[OF Suc(2)] from_block_raw_set[OF this] intv_offset from_block_raw_intv[OF this]]
     show ?case  by simp
 qed
 
