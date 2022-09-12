@@ -65,6 +65,8 @@ proof -
 qed
 setup_lifting type_definition_stack
 
+lift_definition empty_stack :: stack is "\<lambda>x. null x" unfolding null_def by (simp add: fits_def)
+
 abbreviation update_stack :: "stack \<Rightarrow> var \<Rightarrow> val \<Rightarrow> stack" where
   "update_stack s x v \<equiv> Stack ((lookup s)(x:=v))"
 
@@ -158,8 +160,13 @@ lift_definition free_block :: "blocks \<Rightarrow> loc \<Rightarrow> blocks" is
 
 type_synonym pre_config = "stack \<times> blocks \<times> memory"
 
-typedef config = "{(s::stack, b::blocks, m::memory) | s b m.
-  \<forall>x::loc. m x \<noteq> None \<longrightarrow> (\<exists>n lu. (n,lu) \<in> set (raw_blocks b) \<and> intv x lu)}" by auto
+lift_definition initial :: pre_config is "(empty_stack, [], Map.empty)" by auto
+
+abbreviation config_def :: "pre_config \<Rightarrow> bool" where
+  "config_def c \<equiv> case c of (s,b,m) \<Rightarrow> 
+    \<forall>x::loc. m x \<noteq> None \<longrightarrow> (\<exists>n lu. (n,lu) \<in> set (raw_blocks b) \<and> intv x lu)"
+
+typedef config = "{c. config_def c}" by auto
 setup_lifting type_definition_config
 
 lift_definition get_stack :: "config \<Rightarrow> stack" is "\<lambda>c. (case c of (s::stack,_,_) \<Rightarrow> s)" .
