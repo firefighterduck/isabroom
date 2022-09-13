@@ -173,6 +173,9 @@ lift_definition get_stack :: "config \<Rightarrow> stack" is "\<lambda>c. (case 
 lift_definition get_blocks :: "config \<Rightarrow> blocks" is "\<lambda>c. (case c of (_,b::blocks,_) \<Rightarrow> b)" .
 lift_definition get_memory :: "config \<Rightarrow> memory" is "\<lambda>c. (case c of (_,_,m::memory) \<Rightarrow> m)" .
 
+lemma "finite (dom (get_memory c))"
+  apply transfer by auto
+
 definition from_block_raw :: "loc \<Rightarrow> block list \<Rightarrow> block option" where
   "from_block_raw l bs \<equiv> find (\<lambda>(_,lu). intv l lu) bs"
 

@@ -3,6 +3,7 @@ imports Model
 begin
 typedecl binop
 axiomatization apply_binop :: "binop \<Rightarrow> val \<Rightarrow> val \<Rightarrow> val"
+  and plus :: binop
 typedecl unop
 axiomatization apply_unop :: "unop \<Rightarrow> val \<Rightarrow> val"
 datatype condition = Eq | Neq | Leq | Le | Geq | Gr
