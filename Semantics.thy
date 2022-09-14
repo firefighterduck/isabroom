@@ -3,7 +3,7 @@ imports Model
 begin
 typedecl binop
 axiomatization apply_binop :: "binop \<Rightarrow> val \<Rightarrow> val \<Rightarrow> val"
-  and plus :: binop
+  and plus minus :: binop
 typedecl unop
 axiomatization apply_unop :: "unop \<Rightarrow> val \<Rightarrow> val"
 datatype condition = Eq | Neq | Leq | Le | Geq | Gr
@@ -23,9 +23,9 @@ fun eval_cond :: "condition \<Rightarrow> val \<Rightarrow> val \<Rightarrow> bo
 | "eval_cond Geq v1 v2 = eval_cond_aux v1 v2 (\<ge>) True"
 | "eval_cond Gr v1 v2 = eval_cond_aux v1 v2 (>) False"
 
-type_synonym 'a func = "string \<times> var list \<times> 'a option"
+type_synonym func = "string \<times> var list"
 
-datatype 'a command =
+datatype command =
   AssignConst var val 
 | AssignVar var var
 | Load var var
@@ -39,15 +39,16 @@ datatype 'a command =
 | Memcpy (dest: var) (source: var) (number: var)
 | Assume condition var var
 | Assert condition var var
-| Call "'a func" "var list"
+| Call "func" "var list"
 
 subsection \<open>CFG\<close>
 
 typedecl CFG_node
 axiomatization entry :: CFG_node and exit :: CFG_node
 
-type_synonym 'a edge = "CFG_node \<times> 'a command \<times> CFG_node"
-type_synonym 'a cfg = "'a func \<times> 'a edge set"
+type_synonym edge = "CFG_node \<times> command \<times> CFG_node"
+type_synonym cfg = "func \<times> edge set"
+type_synonym prog = "string \<rightharpoonup> cfg"
 
 abbreviation can_allocate_from :: "blocks \<Rightarrow> loc \<Rightarrow> blockname \<Rightarrow> val \<Rightarrow> bool" where
   "can_allocate_from B l n z \<equiv>
@@ -59,11 +60,10 @@ abbreviation can_allocate_from :: "blocks \<Rightarrow> loc \<Rightarrow> blockn
 
 text \<open>Given a control flow graph as a map from function names to their body graphs, 
   relate the semantics of the program. The program implicitly starts at ''main''.\<close>
-context fixes funs :: "string \<Rightarrow> 'a cfg option" begin
-inductive semantics :: "pre_config \<Rightarrow> 'a command \<Rightarrow> pre_config option \<Rightarrow> bool"
+context fixes funs :: "string \<Rightarrow> cfg option" begin
+inductive semantics :: "pre_config \<Rightarrow> command \<Rightarrow> pre_config option \<Rightarrow> bool"
   and fun_semantics :: "string \<Rightarrow> pre_config \<Rightarrow> pre_config \<Rightarrow> bool"
-  and cfg_reachable :: "'a edge set \<Rightarrow> CFG_node \<Rightarrow> CFG_node \<Rightarrow> pre_config \<Rightarrow> pre_config \<Rightarrow> bool" where
-  SingleStep: "\<lbrakk>\<exists>cmd. (from,cmd,to) \<in> es; semantics pre cmd (Some post)\<rbrakk> \<Longrightarrow> cfg_reachable es from to pre post"
+  and cfg_reachable :: "edge set \<Rightarrow> CFG_node \<Rightarrow> CFG_node \<Rightarrow> pre_config \<Rightarrow> pre_config \<Rightarrow> bool" where  SingleStep: "\<lbrakk>\<exists>cmd. (from,cmd,to) \<in> es; semantics pre cmd (Some post)\<rbrakk> \<Longrightarrow> cfg_reachable es from to pre post"
 | MultiStep: "\<lbrakk>\<exists>cmd. (from,cmd,to') \<in> es; semantics pre cmd (Some interm); 
   cfg_reachable es to' to interm post\<rbrakk> \<Longrightarrow> cfg_reachable es from to pre post"
 | "\<lbrakk>(funs f) = Some cfg; cfg_reachable (snd cfg) entry exit pre post\<rbrakk> \<Longrightarrow> fun_semantics f pre post"
@@ -147,14 +147,14 @@ inductive semantics :: "pre_config \<Rightarrow> 'a command \<Rightarrow> pre_co
 | AssertSuccess: "eval_cond c (lookup S x) (lookup S y) \<Longrightarrow> semantics (S,B,M) (Assert c x y) (Some (S,B,M))"
 | "\<lbrakk>distinct args; length args = length params; list_all2 (\<lambda>a p. size a = size p) args params;
   fun_semantics f (Stack (bind_args_to_params (lookup S) params args),B,M) (S',B',M')\<rbrakk>
-  \<Longrightarrow> semantics (S,B,M) (Call (f,params,_) args) 
+  \<Longrightarrow> semantics (S,B,M) (Call (f,params) args) 
     (Some (Stack (bind_args_to_params (lookup S') args params),B',M'))"
 end
 
-abbreviation program_semantics :: "(string \<Rightarrow> 'a cfg option) \<Rightarrow> pre_config \<Rightarrow> bool" where
+abbreviation program_semantics :: "prog \<Rightarrow> pre_config \<Rightarrow> bool" where
   "program_semantics program post \<equiv> fun_semantics program ''main'' initial post"
 
-lift_definition program_semantics_config :: "(string \<Rightarrow> 'a cfg option) \<Rightarrow> config \<Rightarrow> bool" is
+lift_definition program_semantics_config :: "prog \<Rightarrow> config \<Rightarrow> bool" is
   "program_semantics" .
 
 abbreviation all_blocks_alloc :: "block list \<Rightarrow> memory \<Rightarrow> bool" where

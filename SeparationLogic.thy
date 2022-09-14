@@ -10,6 +10,11 @@ datatype expr =
 | UnOpE unop expr
 | BinOpE binop expr expr
 
+abbreviation e_add :: "expr \<Rightarrow> expr \<Rightarrow> expr" where
+  "e_add e1 e2 \<equiv> BinOpE plus e1 e2"
+
+declare [[coercion VarE, coercion ConstE, coercion_enabled = true]]
+
 fun e_size :: "expr \<Rightarrow> nat" where
   "e_size (ConstE k) = length k"
 | "e_size (VarE v) = size v"
@@ -30,7 +35,7 @@ datatype form =
   PointsTo expr expr (infix "\<mapsto>\<^sub>s" 60)
 | PointsToK expr byte expr ("_\<mapsto>\<^sub>_[_]")
 | PointsToTop expr expr ("_\<mapsto>\<top>[_]")
-| SepConj form form (infixl "\<^emph>" 50)
+| SepConj form form (infixr "\<^emph>" 50)
 | Disj form form (infixl "\<or>\<^sub>s" 55)
 | LinkedList expr expr
 | DoublyLinkedList expr expr expr expr
@@ -39,11 +44,14 @@ datatype form =
 | Atom condition expr expr
 | Exists var form
 
-fun is_symbolic_heap :: "form \<Rightarrow> bool" where
-  "is_symbolic_heap (SepConj f1 f2) = (is_symbolic_heap f1 \<and> is_symbolic_heap f2)"
-| "is_symbolic_heap (Disj _ _) = False"
-| "is_symbolic_heap (Exists _ f) = is_symbolic_heap f"
-| "is_symbolic_heap _ = True"
+abbreviation f_eq :: "expr \<Rightarrow> expr \<Rightarrow> form" where
+  "f_eq e1 e2 \<equiv> Atom Eq e1 e2"
+
+fun symbolic_heap :: "form \<Rightarrow> bool" where
+  "symbolic_heap (SepConj f1 f2) = (symbolic_heap f1 \<and> symbolic_heap f2)"
+| "symbolic_heap (Disj _ _) = False"
+| "symbolic_heap (Exists _ f) = symbolic_heap f"
+| "symbolic_heap _ = True"
 
 fun quantifier_free :: "form \<Rightarrow> bool" where
   "quantifier_free (SepConj f1 f2) = (quantifier_free f1 \<and> quantifier_free f2)"
@@ -139,24 +147,37 @@ fun form_semantics :: "pre_config \<Rightarrow> form \<Rightarrow> bool" (infix 
 | "c \<turnstile> l = list_semantics c l"
 end
 
-locale sound_separation_logic = separation_logic
+locale sound_separation_logic = separation_logic \<Lambda> d\<Lambda> for \<Lambda> d\<Lambda>
   + assumes sound_lambda: "\<forall>c e1 e2. c \<turnstile> (fst \<Lambda> e1 e2) \<longleftrightarrow> snd \<Lambda> e1 e2 c"
     and sound_dlambda: "\<forall>c e1 e2 e3. c \<turnstile> (fst d\<Lambda> e1 e2 e3) \<longleftrightarrow> snd d\<Lambda> e1 e2 e3 c"
+
+locale program_logic = sound_separation_logic 
+  + fixes fs :: prog
+  assumes "\<forall>n \<in> dom fs. \<forall>cfg. fs n = Some cfg \<longrightarrow> fst (fst cfg) = n"
 
 interpretation standard_sl: 
   sound_separation_logic "((\<lambda>x y. x \<mapsto>\<^sub>s y), pointsto_sem)"
     "((\<lambda>x y z. (x\<mapsto>\<^sub>sz) \<^emph> ((BinOpE plus x (ConstE [8]))\<mapsto>\<^sub>sy)), 
       (\<lambda>x y z (S,B,M). \<exists>M1 M2. dom M1 \<inter> dom M2 = {} \<and> M = M1 ++ M2 \<and>
       pointsto_sem x z (S,B,M1) \<and> pointsto_sem (BinOpE plus x (ConstE [8])) y (S,B,M2)))"
-proof (standard)
-  let ?\<Lambda> = "((\<lambda>x y. x \<mapsto>\<^sub>s y), pointsto_sem)"
-  let ?d\<Lambda> = "((\<lambda>x y z. (x\<mapsto>\<^sub>sz) \<^emph> ((BinOpE plus x (ConstE [8]))\<mapsto>\<^sub>sy)), 
-      (\<lambda>x y z (S,B,M). \<exists>M1 M2. dom M1 \<inter> dom M2 = {} \<and> M = M1 ++ M2 \<and>
-      pointsto_sem x z (S,B,M1) \<and> pointsto_sem (BinOpE plus x (ConstE [8])) y (S,B,M2)))"
+  by standard (auto simp: separation_logic.form_semantics.simps(1,4))
 
-  show "\<forall>c e1 e2. separation_logic.form_semantics ?\<Lambda> ?d\<Lambda> c (fst ?\<Lambda> e1 e2)  \<longleftrightarrow> snd ?\<Lambda> e1 e2 c" sorry
-  show "\<forall>c e1 e2 e3. separation_logic.form_semantics ?\<Lambda> ?d\<Lambda> c (fst ?d\<Lambda> e1 e2 e3) \<longleftrightarrow> snd ?d\<Lambda> e1 e2 e3 c"
-    sorry
-qed
+context sound_separation_logic begin
+definition satisfiable :: "form \<Rightarrow> bool" where
+  "satisfiable P \<equiv> \<exists>S B M. (S,B,M) \<turnstile> P"
 
+definition entails :: "form \<Rightarrow> form \<Rightarrow> bool" where
+  "entails P Q \<equiv> \<forall>S B M. (S,B,M) \<turnstile> P \<longrightarrow> (S,B,M) \<turnstile> Q"
+end
+
+context separation_logic begin
+definition FalseF :: form where
+  "FalseF \<equiv> Atom Neq (ConstE []) (ConstE [])"
+
+lemma false_is_false: "\<nexists>S B M. (S,B,M) \<turnstile> FalseF"
+  by (auto simp: FalseF_def)
+
+lemma false_conj_unit: "((S,B,M) \<turnstile> (P \<or>\<^sub>s FalseF)) = (S,B,M) \<turnstile> P" 
+  using false_is_false by (auto)
+end
 end

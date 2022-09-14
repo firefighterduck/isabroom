@@ -44,6 +44,7 @@ abbreviation "loc_N_b\<equiv>64::nat"
 abbreviation "loc_N_B\<equiv>8::nat"
 
 interpretation loc64_ops: loc_ops "64::64" by standard simp
+abbreviation null_loc :: val where "null_loc \<equiv> loc64_ops.to_val 0"
 
 typedecl var
 axiomatization size :: "var \<Rightarrow> nat" where pos_size: "size v > 0"
