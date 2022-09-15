@@ -47,7 +47,9 @@ interpretation loc64_ops: loc_ops "64::64" by standard simp
 abbreviation null_loc :: val where "null_loc \<equiv> loc64_ops.to_val 0"
 
 typedecl var
-axiomatization size :: "var \<Rightarrow> nat" where pos_size: "size v > 0"
+axiomatization size :: "var \<Rightarrow> nat" 
+  and fresh :: "var set \<Rightarrow> var"
+  where pos_size: "size v > 0" and new_fresh: "fresh vs \<notin> vs"
 
 abbreviation sizev :: "var \<Rightarrow> 'a::len word" where
   "sizev v \<equiv> word_of_nat (size v)"

@@ -133,9 +133,13 @@ typedef contract = "{(cs, (f,args))::pre_contract\<times>func | cs args f.
       that only contain logical variables.\<close>
     (\<exists>eqs. Qeq = simplify_emp_sepconj (foldr (\<lambda>(x, e). (\<^emph>) (f_eq x e)) (zip args eqs) Emp)
     \<and> list_all (\<lambda>e. free_vars e \<inter> set args = {}) eqs)
-    | _ \<Rightarrow> False) Q}" by auto
+    | _ \<Rightarrow> False) Q \<and> Q \<noteq> []}" morphisms raw_contract Contract
+  by auto
 
 setup_lifting type_definition_contract
+
+lift_definition conjunctive :: "contract \<Rightarrow> bool" is
+  "\<lambda>(cs, (f,args)). \<forall>(P,Qs) \<in> cs. length Qs = 1" .
 
 context program_logic
 begin
@@ -235,13 +239,18 @@ qed
 
 definition free :: prog where "free \<equiv> single_fun_prog (''free'',[x]) (Free x)"
 definition free_contract :: pre_contract where 
-  "free_contract \<equiv> {((f_eq x X)\<^emph>(X\<mapsto>\<top>[y])\<^emph>(f_eq (Base X) X)\<^emph>(f_eq (Ende X) (e_add X y)),[Emp \<^emph> (f_eq x X)])}"
+  "free_contract \<equiv> {
+  ((f_eq x X)\<^emph>(f_eq X null_loc), [(f_eq X null_loc) \<^emph> (f_eq x X)]),
+  ((f_eq x X)\<^emph>(X\<mapsto>\<top>[y])\<^emph>(f_eq (Base X) X)\<^emph>(f_eq (Ende X) (e_add X y)),[Emp \<^emph> (f_eq x X)])}"
 lift_definition free_c :: contract is "(free_contract, (''free'',[x]))"
+  using var_sep[simplified]
 proof (auto simp: free_contract_def)
   define eqs where "eqs = [VarE X]"
   then have "f_eq x X = simplify_emp_sepconj (foldr (\<lambda>(x, e). (\<^emph>) (f_eq x e)) (zip [x] eqs) Emp) 
     \<and> list_all (\<lambda>e. x \<notin> free_vars e) eqs"
     using eqs_def var_sep diff_var by auto
+  then show "\<exists>eqs. f_eq x X = simplify_emp_sepconj (foldr (\<lambda>(x, e). (\<^emph>) (f_eq x e)) (zip [x] eqs) Emp) 
+    \<and> list_all (\<lambda>e. x \<notin> free_vars e) eqs" by auto
   then show "\<exists>eqs. f_eq x X = simplify_emp_sepconj (foldr (\<lambda>(x, e). (\<^emph>) (f_eq x e)) (zip [x] eqs) Emp) 
     \<and> list_all (\<lambda>e. x \<notin> free_vars e) eqs" by auto
 qed

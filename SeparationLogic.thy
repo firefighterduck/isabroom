@@ -93,6 +93,63 @@ fun free_vars_form :: "form \<Rightarrow> var set" where
 | "free_vars_form (Exists v f) = free_vars_form f - {v}"
 instance .. end
 
+fun rename_vars_expr :: "expr \<Rightarrow> var set \<Rightarrow> (var\<Rightarrow>var) \<Rightarrow> (expr\<times>(var\<Rightarrow>var))" where
+  "rename_vars_expr (ConstE val) _ vs = (ConstE val, vs)"
+| "rename_vars_expr (VarE var) in_use vs = 
+  (if vs var \<in> in_use then (let fresh_v = fresh in_use in (VarE fresh_v, vs(var:=fresh_v))) 
+  else (VarE (vs var), vs))"
+| "rename_vars_expr (Base expr) in_use vs = (let (e',vs') = rename_vars_expr expr in_use vs in
+  (Base e', vs'))"
+| "rename_vars_expr (Ende expr) in_use vs = (let (e',vs') = rename_vars_expr expr in_use vs in
+  (Ende e', vs'))"
+| "rename_vars_expr (UnOpE op expr) in_use vs = (let (e',vs') = rename_vars_expr expr in_use vs in
+  (UnOpE op e', vs'))"
+| "rename_vars_expr (BinOpE op e1 e2) in_use vs = 
+  (let (e1',vs1) = rename_vars_expr e1 in_use vs in
+  (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
+  (BinOpE op e1' e2', vs2)))"
+
+fun rename_vars :: "form \<Rightarrow> var set \<Rightarrow> (var\<Rightarrow>var) \<Rightarrow> (form\<times>(var\<Rightarrow>var))" where
+  "rename_vars (e1 \<mapsto>\<^sub>s e2) in_use vs =
+  (let (e1',vs1) = rename_vars_expr e1 in_use vs in
+  (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
+  (e1' \<mapsto>\<^sub>s e2', vs2)))"
+| "rename_vars (e1 \<mapsto>\<^sub>b[e2]) in_use vs = 
+  (let (e1',vs1) = rename_vars_expr e1 in_use vs in
+  (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
+  (e1' \<mapsto>\<^sub>b [e2'], vs2)))"
+| "rename_vars (e1 \<mapsto>\<top>[e2]) in_use vs = 
+  (let (e1',vs1) = rename_vars_expr e1 in_use vs in
+  (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
+  (e1'\<mapsto>\<top>[e2'], vs2)))"
+| "rename_vars (f1\<^emph>f2) in_use vs =
+  (let (f1',vs1) = rename_vars f1 in_use vs in
+  (let (f2',vs2) = rename_vars f2 in_use vs1 in
+  (f1' \<^emph> f2', vs2)))"
+| "rename_vars (f1\<or>\<^sub>sf2) in_use vs =
+  (let (f1',vs1) = rename_vars f1 in_use vs in
+  (let (f2',vs2) = rename_vars f2 in_use vs1 in
+  (f1' \<or>\<^sub>s f2', vs2)))"
+| "rename_vars (LinkedList e1 e2) in_use vs =
+  (let (e1',vs1) = rename_vars_expr e1 in_use vs in
+  (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
+  (LinkedList e1' e2', vs2)))"
+| "rename_vars (DoublyLinkedList e1 e2 e3 e4) in_use vs =
+  (let (e1',vs1) = rename_vars_expr e1 in_use vs in
+  (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
+  (let (e3',vs3) = rename_vars_expr e3 in_use vs2 in
+  (let (e4',vs4) = rename_vars_expr e4 in_use vs3 in
+  (DoublyLinkedList e1' e2' e3' e4', vs4)))))"
+| "rename_vars Emp _ vs = (Emp,vs)"
+| "rename_vars TrueF _ vs = (TrueF,vs)"
+| "rename_vars (Atom condition e1 e2) in_use vs =
+  (let (e1',vs1) = rename_vars_expr e1 in_use vs in
+  (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
+  (Atom condition e1' e2', vs2)))"
+| "rename_vars (Exists v f) in_use vs =
+  (if vs v \<in> in_use then (let v' = fresh in_use in (let (f',vs') = rename_vars f in_use (vs(v:=v')) in
+    (Exists v' f', vs'))) else (let (f',vs') = rename_vars f in_use vs in (Exists (vs' v) f', vs')))"
+
 abbreviation pointsto_sem :: "expr \<Rightarrow> expr \<Rightarrow> pre_config \<Rightarrow> bool" where
   "pointsto_sem e1 e2 c \<equiv> case c of (S,B,M) \<Rightarrow> 
     (dom M = {x. loc64_ops.from_val (expr_semantics S B e1) \<le> x \<and> 
