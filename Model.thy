@@ -51,6 +51,8 @@ axiomatization size :: "var \<Rightarrow> nat"
   and fresh :: "var set \<Rightarrow> var"
   where pos_size: "size v > 0" and new_fresh: "fresh vs \<notin> vs"
 
+instance var :: linorder sorry
+
 abbreviation sizev :: "var \<Rightarrow> 'a::len word" where
   "sizev v \<equiv> word_of_nat (size v)"
 

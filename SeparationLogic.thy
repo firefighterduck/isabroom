@@ -59,6 +59,9 @@ fun quantifier_free :: "form \<Rightarrow> bool" where
 | "quantifier_free (Exists _ f) = False"
 | "quantifier_free _ = True"
 
+abbreviation quantifree_symb_heap :: "form \<Rightarrow> bool" where 
+  "quantifree_symb_heap P \<equiv> quantifier_free P \<and> symbolic_heap P"
+
 fun pure :: "form \<Rightarrow> bool" where
   "pure (SepConj f1 f2) = (pure f1 \<and> pure f2)"
 | "pure (Atom _ _ _) = True"
@@ -93,11 +96,11 @@ fun free_vars_form :: "form \<Rightarrow> var set" where
 | "free_vars_form (Exists v f) = free_vars_form f - {v}"
 instance .. end
 
-fun rename_vars_expr :: "expr \<Rightarrow> var set \<Rightarrow> (var\<Rightarrow>var) \<Rightarrow> (expr\<times>(var\<Rightarrow>var))" where
+fun rename_vars_expr :: "expr \<Rightarrow> var set \<Rightarrow> (var\<Rightarrow>expr) \<Rightarrow> (expr\<times>(var\<Rightarrow>expr))" where
   "rename_vars_expr (ConstE val) _ vs = (ConstE val, vs)"
 | "rename_vars_expr (VarE var) in_use vs = 
-  (if vs var \<in> in_use then (let fresh_v = fresh in_use in (VarE fresh_v, vs(var:=fresh_v))) 
-  else (VarE (vs var), vs))"
+  (case vs var of VarE v \<Rightarrow> (if v \<in> in_use then (let fresh_v = fresh in_use in 
+  (VarE fresh_v, vs(var:=fresh_v))) else (VarE v, vs)) | e \<Rightarrow> (e, vs))"
 | "rename_vars_expr (Base expr) in_use vs = (let (e',vs') = rename_vars_expr expr in_use vs in
   (Base e', vs'))"
 | "rename_vars_expr (Ende expr) in_use vs = (let (e',vs') = rename_vars_expr expr in_use vs in
@@ -109,7 +112,7 @@ fun rename_vars_expr :: "expr \<Rightarrow> var set \<Rightarrow> (var\<Rightarr
   (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
   (BinOpE op e1' e2', vs2)))"
 
-fun rename_vars :: "form \<Rightarrow> var set \<Rightarrow> (var\<Rightarrow>var) \<Rightarrow> (form\<times>(var\<Rightarrow>var))" where
+fun rename_vars :: "form \<Rightarrow> var set \<Rightarrow> (var\<Rightarrow>expr) \<Rightarrow> (form\<times>(var\<Rightarrow>expr))" where
   "rename_vars (e1 \<mapsto>\<^sub>s e2) in_use vs =
   (let (e1',vs1) = rename_vars_expr e1 in_use vs in
   (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
@@ -147,8 +150,12 @@ fun rename_vars :: "form \<Rightarrow> var set \<Rightarrow> (var\<Rightarrow>va
   (let (e2',vs2) = rename_vars_expr e2 in_use vs1 in
   (Atom condition e1' e2', vs2)))"
 | "rename_vars (Exists v f) in_use vs =
-  (if vs v \<in> in_use then (let v' = fresh in_use in (let (f',vs') = rename_vars f in_use (vs(v:=v')) in
-    (Exists v' f', vs'))) else (let (f',vs') = rename_vars f in_use vs in (Exists (vs' v) f', vs')))"
+  \<comment> \<open>vs must not map v to any expr. Bound variables can only be renamed but not substituted.\<close>
+  (if v \<in> in_use then (let v' = fresh in_use in (let (f',vs') = rename_vars f in_use (vs(v:=v')) in
+    (Exists v' f', vs'))) else (let (f',vs') = rename_vars f in_use vs in (Exists v f', vs')))"
+
+abbreviation rename_vars_option :: "form \<Rightarrow> var set \<Rightarrow> (var\<rightharpoonup>expr) \<Rightarrow> (form\<times>(var\<Rightarrow>expr))" where
+  "rename_vars_option f in_use vs_map \<equiv> rename_vars f in_use (\<lambda>x. case vs_map x of Some y \<Rightarrow> y | _ \<Rightarrow> x)"
 
 abbreviation pointsto_sem :: "expr \<Rightarrow> expr \<Rightarrow> pre_config \<Rightarrow> bool" where
   "pointsto_sem e1 e2 c \<equiv> case c of (S,B,M) \<Rightarrow> 
